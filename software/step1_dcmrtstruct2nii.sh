@@ -1,3 +1,23 @@
+#!/bin/bash
+
+# first check that the venv is active
+
+if [ -z $VIRTUAL_ENV ]; then
+	echo "Virtual environment is not active, you might want to run:"
+	echo "source external/deface/bin/activate"
+	return
+fi
+
+currenv=$(echo $VIRTUAL_ENV|awk -F "/" '{print $NF}');
+
+if [ $currenv != "deface" ]; then
+	echo "Your active environment is not =deface=, you might want to run:"
+    echo "source external/deface/bin/activate"
+    return
+fi
+
+# if we are here, then environemnt is set and we are ready to go
+
 basepath="/m/cs/scratch/faceai/rawdata/TCIA_data/HNPETCT/manifest-VpKfQUDr2642018792281691204/"
 s=0;
 for u in $(cat $basepath"metadata.csv" |grep ",RTstructCTsim-CTPET-CT,"|cut -d, -f5-6); do 
@@ -23,7 +43,9 @@ for u in $(cat $basepath"metadata.csv" |grep ",RTstructCTsim-CTPET-CT,"|cut -d, 
 	
 	rtID=$(echo ${rtfile: -5});
 	searchpath=$(echo $rtfile|cut -d\/ -f 1-3);
-	goodrtfile=$(find $basepath$searchpath -type d|grep $rtID| sed 's/ /\\ /g');
+	goodrtfile=$(find $basepath$searchpath -type d|grep $rtID| sed 's/ /\\ /g'|grep RT); # added grep RT 
+
+	# testing shoudl be added to check we have only one folder for CT and one for RT
 
 	# testing:
 	# echo "\""$ctfile"\" \""$rtfile"\"";
@@ -34,8 +56,30 @@ for u in $(cat $basepath"metadata.csv" |grep ",RTstructCTsim-CTPET-CT,"|cut -d, 
 
 	
 	origuser=$(echo $u|cut -d, -f1);
-	outputfolder="/m/cs/scratch/faceai/projects/defacing_202109/data/HNPETCT/processed_CT/"$origuser
-	mkdir -p $outputfolder
-	echo "dcmrtstruct2nii  convert --rtstruct "$goodrtfile/1-1.dcm" --dicom  "$goodctfile" --output "$outputfolder;
+	outputfolder="/m/cs/scratch/faceai/projects/faceai_testingdefacing/data/HNPETCT/processed_CT/"$origuser
+	timestamp=$(date +'%Y%m%d%H%M%S');
+	logfile=$outputfolder"/log_"$timestamp".log"
+	donefile=$outputfolder"/"$origuser".done"	
+
+	# if already done, skip it
+	if [ -f $donefile ]; then
+		echo "Looks like $donefile exists, skipping this subject"
+		continue
+	else
+		echo "Processing $origuser in $outputfolder"
+	fi
 	
+	echo mkdir -p $outputfolder
+	mkdir -p $outputfolder
+	command=$(echo "dcmrtstruct2nii  convert --rtstruct "$goodrtfile/1-1.dcm" --dicom  "$goodctfile" --output "$outputfolder);
+	echo $command 2>&1|tee $logfile
+	eval $command 2>&1|tee $logfile
+	issuccess=$(cat $logfile|grep "Success"|wc -l);
+	if [ $issuccess -eq 1 ]; then
+		touch $donefile
+	else
+		echo "Something went wrong with $origuser at $outputfolder"
+		return
+	fi
 done
+exit
